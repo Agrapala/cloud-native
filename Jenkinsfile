@@ -3,14 +3,14 @@ pipeline {
 
   environment {
     AWS_REGION = "ap-south-1"
-    ECR_URL = "<your-account-id>.dkr.ecr.ap-south-1.amazonaws.com"
+    ECR_URL = "632813643911.dkr.ecr.ap-south-1.amazonaws.com"
   }
 
   stages {
 
     stage('Checkout') {
       steps {
-        git '<your-github-repo-url>'
+        git 'https://github.com/Agrapala/cloud-native.git'
       }
     }
 

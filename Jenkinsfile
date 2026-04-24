@@ -65,11 +65,28 @@ pipeline {
 
     stage('Deploy to EKS') {
       steps {
-        sh '''
-        kubectl apply -f k8s/
-        '''
+        withCredentials([
+          string(credentialsId: 'AWS_ACCESS_KEY', variable: 'AWS_ACCESS_KEY_ID'),
+          string(credentialsId: 'AWS_SECRET_KEYS', variable: 'AWS_SECRET_ACCESS_KEY')
+        ]) {
+          sh '''
+          export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+          export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+          export AWS_DEFAULT_REGION=ap-south-1
+
+          # Configure kubeconfig
+          aws eks update-kubeconfig --region ap-south-1 --name devops-project
+
+          # Deploy
+          kubectl apply -f k8s/
+
+          # Restart pods to pull latest image
+          kubectl rollout restart deployment backend
+          kubectl rollout restart deployment frontend
+          kubectl rollout restart deployment worker
+          '''
+        }
       }
     }
-
   }
 }

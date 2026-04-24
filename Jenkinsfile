@@ -10,7 +10,7 @@ pipeline {
 
     stage('Checkout') {
       steps {
-        git 'https://github.com/Agrapala/cloud-native.git'
+        git branch: 'main', url: 'https://github.com/Agrapala/cloud-native.git'
       }
     }
 

@@ -37,6 +37,7 @@ pipeline {
 
       aws ecr get-login-password --region ap-south-1 | \
       docker login --username AWS --password-stdin 632813643911.dkr.ecr.ap-south-1.amazonaws.com
+      aws eks update-kubeconfig --region ap-south-1 --name devops-project
       '''
     }
   }

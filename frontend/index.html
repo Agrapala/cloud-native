@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Course Portal</title>
+  <style>
+    body {
+      font-family: Arial;
+      margin: 20px;
+    }
+
+    .course {
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin-bottom: 10px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    img {
+      width: 120px;
+      height: 80px;
+      object-fit: cover;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>📚 Available Courses</h1>
+
+<div id="courses"></div>
+
+<script>
+async function loadCourses() {
+  try {
+    const res = await fetch("http://localhost:3000/courses");
+    const data = await res.json();
+
+    const container = document.getElementById("courses");
+
+    container.innerHTML = data.map(course => `
+      <div class="course">
+        <img src="${course.image_url}" />
+        <div>
+          <h3>${course.title}</h3>
+          <p>${course.description}</p>
+        </div>
+      </div>
+    `).join("");
+
+  } catch (err) {
+    console.error("Error loading courses:", err);
+  }
+}
+
+loadCourses();
+</script>
+
+</body>
+</html>

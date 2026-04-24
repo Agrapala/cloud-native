@@ -1,100 +1,121 @@
 const express = require("express");
 const { Pool } = require("pg");
 const redis = require("redis");
+const AWS = require("aws-sdk");
 const cors = require("cors");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
+const dbPort = Number.parseInt(process.env.DB_PORT || "5433", 10);
+const redisHost = process.env.REDIS_HOST || "localhost";
+const redisPort = process.env.REDIS_PORT || "6379";
+const redisUrl = process.env.REDIS_URL || `redis://${redisHost}:${redisPort}`;
+
 /* -----------------------------
-   PostgreSQL Connection
+   PostgreSQL
 ------------------------------*/
 const pool = new Pool({
-  host: "localhost",
-  user: "postgres",
-  password: "password",
-  database: "coursesdb",
-  port: 5433,
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "postgres",
+  password: process.env.DB_PASS || "password",
+  database: process.env.DB_NAME || "coursesdb",
+  port: dbPort,
 });
 
 /* -----------------------------
-   Redis Connection
+   Redis
 ------------------------------*/
 const redisClient = redis.createClient({
-  url: "redis://localhost:6379",
+  url: redisUrl,
 });
 
 redisClient.connect()
   .then(() => console.log("✅ Redis Connected"))
-  .catch((err) => console.error("❌ Redis Error:", err));
+  .catch(err => console.error("Redis Error:", err));
 
 /* -----------------------------
-   Test API
+   AWS CONFIG
+------------------------------*/
+AWS.config.update({
+  region: "ap-south-1"
+});
+
+const sqs = new AWS.SQS();
+
+/* -----------------------------
+   TEST
 ------------------------------*/
 app.get("/", (req, res) => {
-  res.send("Backend is running 🚀");
+  res.send("Backend running 🚀");
 });
 
 /* -----------------------------
-   GET /courses (WITH CACHE)
+   GET /courses (CACHE)
 ------------------------------*/
 app.get("/courses", async (req, res) => {
   try {
-    // 1. Check Redis cache
-    const cachedData = await redisClient.get("courses");
+    const cached = await redisClient.get("courses");
 
-    if (cachedData) {
+    if (cached) {
       console.log("🔥 Cache HIT");
-      return res.json(JSON.parse(cachedData));
+      return res.json(JSON.parse(cached));
     }
 
-    console.log("❄️ Cache MISS - fetching from DB");
+    console.log("❄️ Cache MISS");
 
-    // 2. Fetch from PostgreSQL
     const result = await pool.query("SELECT * FROM courses");
 
-    // 3. Save to Redis (TTL = 10 minutes)
     await redisClient.setEx(
       "courses",
       600,
       JSON.stringify(result.rows)
     );
 
-    return res.json(result.rows);
+    res.json(result.rows);
 
-  } catch (error) {
-    console.error("Error fetching courses:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error fetching courses");
   }
 });
 
 /* -----------------------------
-   POST /courses (Optional add data)
+   POST /register → SQS
 ------------------------------*/
-app.post("/courses", async (req, res) => {
+app.post("/register", async (req, res) => {
   try {
-    const { title, description, image_url } = req.body;
+    const { course_id, student_name, email } = req.body;
 
-    const result = await pool.query(
-      "INSERT INTO courses (title, description, image_url) VALUES ($1, $2, $3) RETURNING *",
-      [title, description, image_url]
-    );
+    if (!course_id || !student_name || !email) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
 
-    // IMPORTANT: invalidate cache
-    await redisClient.del("courses");
+    const message = {
+      course_id,
+      student_name,
+      email
+    };
 
-    res.json(result.rows[0]);
+    await sqs.sendMessage({
+      QueueUrl: process.env.SQS_URL,
+      MessageBody: JSON.stringify(message),
+    }).promise();
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Insert failed" });
+    console.log("📨 Sent to SQS:", message);
+
+    res.json({ message: "Registration queued successfully" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to send message" });
   }
 });
 
 /* -----------------------------
-   Server Start
+   START SERVER
 ------------------------------*/
 app.listen(3000, () => {
-  console.log("🚀 Server running on port 3000");
+  console.log("🚀 Backend running on port 3000");
 });

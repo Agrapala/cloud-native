@@ -3,15 +3,20 @@ const { Pool } = require("pg");
 const redis = require("redis");
 const AWS = require("aws-sdk");
 const cors = require("cors");
+const dotenv = require("dotenv");
+const path = require("path");
+
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
 const dbPort = Number.parseInt(process.env.DB_PORT || "5433", 10);
-const redisHost = process.env.REDIS_HOST || "localhost";
+const redisHost = process.env.REDIS_HOST;
 const redisPort = process.env.REDIS_PORT || "6379";
-const redisUrl = process.env.REDIS_URL || `redis://${redisHost}:${redisPort}`;
+const redisUrl = process.env.REDIS_URL || (redisHost ? `redis://${redisHost}:${redisPort}` : null);
+let redisReady = false;
 
 /* -----------------------------
    PostgreSQL
@@ -27,13 +32,26 @@ const pool = new Pool({
 /* -----------------------------
    Redis
 ------------------------------*/
-const redisClient = redis.createClient({
-  url: redisUrl,
-});
+let redisClient = null;
 
-redisClient.connect()
-  .then(() => console.log("✅ Redis Connected"))
-  .catch(err => console.error("Redis Error:", err));
+if (redisUrl) {
+  redisClient = redis.createClient({
+    url: redisUrl,
+  });
+
+  redisClient.on("error", (err) => {
+    console.error("Redis Error:", err);
+  });
+
+  redisClient.connect()
+    .then(() => {
+      redisReady = true;
+      console.log("✅ Redis Connected");
+    })
+    .catch(err => console.error("Redis Error:", err));
+} else {
+  console.log("ℹ️ Redis not configured, cache disabled");
+}
 
 /* -----------------------------
    AWS CONFIG
@@ -56,22 +74,28 @@ app.get("/", (req, res) => {
 ------------------------------*/
 app.get("/courses", async (req, res) => {
   try {
-    const cached = await redisClient.get("courses");
+    if (redisReady && redisClient) {
+      const cached = await redisClient.get("courses");
 
-    if (cached) {
-      console.log("🔥 Cache HIT");
-      return res.json(JSON.parse(cached));
+      if (cached) {
+        console.log("🔥 Cache HIT");
+        return res.json(JSON.parse(cached));
+      }
+
+      console.log("❄️ Cache MISS");
+    } else {
+      console.log("ℹ️ Redis unavailable, serving courses without cache");
     }
-
-    console.log("❄️ Cache MISS");
 
     const result = await pool.query("SELECT * FROM courses");
 
-    await redisClient.setEx(
-      "courses",
-      600,
-      JSON.stringify(result.rows)
-    );
+    if (redisReady && redisClient) {
+      await redisClient.setEx(
+        "courses",
+        600,
+        JSON.stringify(result.rows)
+      );
+    }
 
     res.json(result.rows);
 

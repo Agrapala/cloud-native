@@ -11,7 +11,7 @@ services:
       - DB_USER=postgres
       - DB_PASS=password
       - DB_NAME=coursesdb
-      - DB_PORT=5432
+      - DB_PORT=5433
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SQS_URL=${SQS_URL}
@@ -35,7 +35,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      - "3000:80"
 
   postgres:
     image: postgres:15

@@ -1,5 +1,9 @@
 const AWS = require("aws-sdk");
 const { Pool } = require("pg");
+const dotenv = require("dotenv");
+const path = require("path");
+
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 /* -----------------------------
    AWS CONFIG
@@ -29,6 +33,11 @@ const pool = new Pool({
 ------------------------------*/
 async function pollQueue() {
   try {
+    if (!process.env.SQS_URL) {
+      console.error("Worker error: Missing SQS_URL");
+      return;
+    }
+
     const data = await sqs.receiveMessage({
       QueueUrl: process.env.SQS_URL,
       MaxNumberOfMessages: 1,
@@ -53,12 +62,16 @@ async function pollQueue() {
       console.log("💾 Saved to DB");
 
       /* 2. Send SNS Notification */
-      await sns.publish({
-        TopicArn: process.env.SNS_TOPIC,
-        Message: `New student ${body.student_name} registered for course ${body.course_id}`
-      }).promise();
+      if (process.env.SNS_TOPIC) {
+        await sns.publish({
+          TopicArn: process.env.SNS_TOPIC,
+          Message: `New student ${body.student_name} registered for course ${body.course_id}`
+        }).promise();
 
-      console.log("📣 SNS notification sent");
+        console.log("📣 SNS notification sent");
+      } else {
+        console.log("ℹ️ SNS_TOPIC not set, skipping notification");
+      }
 
       /* 3. Delete message from queue */
       await sqs.deleteMessage({
